@@ -1,4 +1,4 @@
-# Series-library-manager
+# series-library-manager
 
 # Requirements
 certifi==2026.1.4 <br>
