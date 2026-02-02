@@ -1,6 +1,4 @@
-*.txt
-*.json
-
 posters/
+data/
 __pycache__/
 .venv/

@@ -4,7 +4,7 @@ import time
 import re
 import json
 import datetime
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMenu, QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QHeaderView, QListWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMenu, QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QHeaderView, QListWidget, QPushButton
 from PySide6.QtGui import QPixmap, QDesktopServices, QIcon, QColor
 from ui.ui_main import Ui_MainWindow
 from PySide6.QtCore import Qt, QUrl, QSize, QByteArray, QThread, Signal
@@ -24,9 +24,12 @@ class LibraryManager(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
-        self.img_dir = "posters"
-        if not os.path.exists(self.img_dir):
-            os.makedirs(self.img_dir)
+        os.makedirs("data", exist_ok=True)
+        self.api_key_path = os.path.join("data","api_key.txt")
+        self.token_path = os.path.join("data","token.txt")
+        self.cache_path = os.path.join("data", "dbcache.json")
+        self.posters_path = os.path.join("assets","posters")
+        os.makedirs(self.posters_path, exist_ok=True)
 
         header = self.ui.treeWidget.header()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -71,7 +74,7 @@ class LibraryManager(QMainWindow):
 
         self.check_api_key()
         try:
-            with open("dbcache.json", "r", encoding="utf-8") as f:
+            with open(self.cache_path, "r", encoding="utf-8") as f:
                 cache = json.load(f)
             self.show_titles(cache)
         except Exception as e:
@@ -144,7 +147,7 @@ class LibraryManager(QMainWindow):
         key = self.check_api_key()
         token = None
         try: 
-            with open("token.txt", "r") as f:
+            with open(self.token_path, "r") as f:
                 token = f.read().strip()
                 if token == "":
                     token = None
@@ -174,20 +177,14 @@ class LibraryManager(QMainWindow):
         self.cache_thread.progress_changed.connect(self.ui.scanProgressBar.setValue)
         self.cache_thread.finished.connect(self.on_cache_finished)
         self.cache_thread.start()
-        
-        
-        
-
-        
-
-        
-
 
     def on_cache_finished(self, cache):
         print("Caching and searching finished")
         self.ui.scanProgressBar.setValue(90)
         self.show_titles(cache)
         self.ui.scanProgressBar.setValue(100)
+
+
 
     def show_titles(self, cache: dict):
         print("----------------------show_titles----------------------")
@@ -237,7 +234,7 @@ class LibraryManager(QMainWindow):
 
     def load_poster(self, link: str, tvdb_id: str) -> QPixmap | None:
         print("----------------------load_poster----------------------")
-        file_path = os.path.join(self.img_dir, f"{tvdb_id}.jpg")
+        file_path = os.path.join(self.posters_path, f"{tvdb_id}.jpg")
 
         if os.path.exists(file_path):
             return QPixmap(file_path)
@@ -245,7 +242,6 @@ class LibraryManager(QMainWindow):
         try:
             response = requests.get(link, timeout=10)
             if response.status_code == 200:
-                
                 with open(file_path, "wb") as f:
                     f.write(response.content)
                 
@@ -389,10 +385,10 @@ class LibraryManager(QMainWindow):
 
     def check_api_key(self) -> bool:
         print("----------------------check_api_key----------------------")
-        if not os.path.exists("api_key.txt"):
+        if not os.path.exists(self.api_key_path):
             self.prompt_for_key()
         else:
-            with open("api_key.txt", "r") as f:
+            with open(self.api_key_path, "r") as f:
                 key = f.read().strip()
                 if not key:
                     self.prompt_for_key()
@@ -420,7 +416,7 @@ class LibraryManager(QMainWindow):
         url = "https://api4.thetvdb.com/v4/login"
         
         try:
-            with open("api_key.txt", "r") as f:
+            with open(self.api_key_path, "r") as f:
                 api_key = f.read()
         except Exception as e:
             print(f"Failed to get API key from file: {e}")
@@ -438,7 +434,7 @@ class LibraryManager(QMainWindow):
                 token = data['data']['token']
                 print("Token acquired!")
                 try:
-                    with open("token.txt", "w") as f:
+                    with open(self.token_path, "w") as f:
                         f.write(token)
                         print("Тoken successfully saved")
                         return True
@@ -457,7 +453,7 @@ class LibraryManager(QMainWindow):
         
     def get_api_key(self) -> str | None:
         try:
-            with open("api_key.txt", "r") as f:
+            with open(self.api_key_path, "r") as f:
                 api_key = f.read()
                 return api_key
         except Exception as e:
@@ -466,7 +462,8 @@ class LibraryManager(QMainWindow):
         
     def get_token(self) -> str | None:
         try:
-            with open("token.txt", "r") as f:
+            
+            with open(self.token_path, "r") as f:
                 token = f.read()
                 return token
         except Exception as e:
@@ -560,14 +557,17 @@ class PreferencesWindow(QDialog):
         super().__init__()
         self.ui = Ui_Preferences()
         self.ui.setupUi(self)
-
+        self.api_key_path = os.path.join("data","api_key.txt")
+        self.token_path = os.path.join("data","token.txt")
+        self.cache_path = os.path.join("data", "dbcache.json")
+        self.posters_path = os.path.join("assets","posters")
         self.check_api_key()
 
     def check_api_key(self):
-        if not os.path.exists("api_key.txt"):
+        if not os.path.exists(self.api_key_path):
             pass
         else:
-            with open("api_key.txt", "r") as f:
+            with open(self.api_key_path, "r") as f:
                 key = f.read().strip()
                 if not key:
                     self.ui.P1LineEdit.setPlaceholderText("Enter your API key")
@@ -579,14 +579,17 @@ class APIKeyWindow(QDialog):
         super().__init__()
         self.ui = Ui_APIkeyDialog()
         self.ui.setupUi(self)
-        
+        self.api_key_path = os.path.join("data","api_key.txt")
+        self.token_path = os.path.join("data","token.txt")
+        self.cache_path = os.path.join("data", "dbcache.json")
+        self.posters_path = os.path.join("assets","posters")
         self.ui.buttonBox.clicked.connect(self.save_and_close)
 
     def save_and_close(self):
         key = self.ui.APIkeyLineEdit.text().strip()
         
         if key:
-            with open("api_key.txt", "w") as f:
+            with open(self.api_key_path, "w") as f:
                 f.write(key)
             
             self.accept()
@@ -640,9 +643,9 @@ class ScanCacheWorker(QThread):
 
     def run(self):
         print("----------------------search_titles_in_db----------------------")
-        path = "dbcache.json"
+        path = self.cache_path
         
-        
+    
         cache = {}
         if os.path.exists(path) and os.path.getsize(path) > 0:
             try:
