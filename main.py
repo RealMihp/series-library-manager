@@ -4,10 +4,11 @@ import time
 import re
 import json
 import datetime
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMenu, QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QHeaderView, QListWidget, QPushButton
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMenu, QTreeWidget, QTreeWidgetItem, 
+                               QStyledItemDelegate, QHeaderView, QListWidget, QPushButton, QMessageBox)
 from PySide6.QtGui import QPixmap, QDesktopServices, QIcon, QColor
 from ui.ui_main import Ui_MainWindow
-from PySide6.QtCore import Qt, QUrl, QSize, QByteArray, QThread, Signal
+from PySide6.QtCore import Qt, QUrl, QSize, QByteArray, QThread, Signal, QTimer
 from PySide6.QtWidgets import QWidget
 from ui.ui_preferences import Ui_Preferences
 from PySide6.QtWidgets import QDialog 
@@ -64,6 +65,7 @@ class LibraryManager(QMainWindow):
         self.ui.treeWidget.customContextMenuRequested.connect(self.MF_show_context_menu)
         self.ui.treeWidget.sortItems(0, Qt.AscendingOrder)
 
+        self.ui.searchLineEdit.returnPressed.connect(self.start_search)
         self.ui.SearchPushButton.clicked.connect(self.start_search)
         
         
@@ -79,6 +81,7 @@ class LibraryManager(QMainWindow):
             self.show_titles(cache)
         except Exception as e:
             print(f"Failed to load cache on startup: {e}")
+            self.label_notify("Failed to load added series", "error", 5000)
         self.ui.scanProgressBar.setValue(0)
 
 
@@ -88,6 +91,7 @@ class LibraryManager(QMainWindow):
         if token is None:
             if self.update_tvdb_token() == False:
                 print("Failed to start search because no token")
+                self.show_messagebox("critical", "Failed to get token.\nCheck your API key or internet connection", "Error")
                 return
             token = self.get_token()
 
@@ -164,6 +168,7 @@ class LibraryManager(QMainWindow):
             token = self.update_tvdb_token(key)
             if token is None:
                 print("Failed to get token")
+                self.show_messagebox("critical", "Failed to get token.\nCheck your API key or internet connection", "Error")
                 return
        
         self.ui.scanProgressBar.setValue(10)
@@ -171,7 +176,8 @@ class LibraryManager(QMainWindow):
         titles = self.scan_library()
 
         if titles is None:
-            print("Директория пуста")
+            print("Folder is empty")
+            self.label_notify("Empty folder", "info", 5000)
             self.ui.scanProgressBar.setValue(0)
             return
         print(titles)
@@ -241,7 +247,7 @@ class LibraryManager(QMainWindow):
                 progress = 90 + int(((i + 1) / len(cache)) * 10)
                 self.ui.scanProgressBar.setValue(progress)
                 count = self.ui.treeWidget.topLevelItemCount()
-                self.ui.statusBarLabel.setText(f"Found series: {count}")
+                self.ui.addedSeriesLabel.setText(f"Added series ({count})")
 
                 QApplication.processEvents()
                 
@@ -388,6 +394,7 @@ class LibraryManager(QMainWindow):
             
         else:
             print("Directory wasn't found")
+            self.label_notify("No such folder", "error", 5000)
             return None
 
 
@@ -405,9 +412,10 @@ class LibraryManager(QMainWindow):
             with open(self.api_key_path, "r") as f:
                 key = f.read().strip()
                 if not key:
+                    self.label_notify("API key found", "info", 1000)
                     self.prompt_for_key()
                 else:
-                    print("API key found")
+                    self.label_notify("API key found", "info", 1000)
                     return True
 
     def prompt_for_key(self) -> bool:
@@ -447,22 +455,27 @@ class LibraryManager(QMainWindow):
                 data = response.json()
                 token = data['data']['token']
                 print("Token acquired!")
+                self.label_notify("Token acquired", "info", 500)
                 try:
                     with open(self.token_path, "w") as f:
                         f.write(token)
                         print("Тoken successfully saved")
+                        self.label_notify("Token saved", "info", 1000)
                         return True
                 except Exception as e:
                     print(f"Failed to save token: {e}")
+                    self.label_notify("Failed to save token", "error", 5000)
                     return False
                         
             else:
                 print(f"Auth error: {response.status_code}")
+                self.label_notify(f"Auth error: {response.status_code}", "error", 5000)
                 print(response.text)
                 return False
                 
         except Exception as e:
             print(f"Failed to contact the server: {e}")
+            self.label_notify("Failed to contact the server", "error", 5000)
             return False
         
     def get_api_key(self) -> str | None:
@@ -500,9 +513,7 @@ class LibraryManager(QMainWindow):
 
     def add_folder(self):
         print("----------------------add_folder----------------------")
-
         folder = QFileDialog.getExistingDirectory(self, "Select a library folder")
-    
         if folder:
             self.ui.pathLine.setText(folder)
 
@@ -562,7 +573,32 @@ class LibraryManager(QMainWindow):
                 QDesktopServices.openUrl(url)
         elif action == action2:
             pass
+    
+    def show_messagebox(self, m_type: str, text: str, title: str ="Message"):
+        if m_type.lower() not in ("information", "warning", "critical", "question"):
+            raise ValueError(f"Unknown message type: {m_type}")
+        
+        msg = QMessageBox(self)
+        if m_type == "information":
+            msg.setIcon(QMessageBox.Information)
+        elif m_type == "warning":
+            msg.setIcon(QMessageBox.Warning)
+        elif m_type == "critical":
+            msg.setIcon(QMessageBox.Critical)
+        elif m_type == "question":
+            msg.setIcon(QMessageBox.Question)
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.exec()
 
+    def label_notify(self, text: str, m_type: str = "info", delay: int = 5000):
+        color = "red" if m_type == "error" else "black"
+
+        self.ui.statusBarLabel.setStyleSheet(f"color: {color};")
+        self.ui.statusBarLabel.setText(text)
+
+        QTimer.singleShot(delay, lambda: self.ui.statusBarLabel.setText(""))
 
 
 
@@ -717,6 +753,7 @@ class ScanCacheWorker(QThread):
 
                 except Exception as e:
                     print(f"Request error for {title}: {e}")
+                    self.label_notify("Request error", "error", 1000)
 
             progress = 20 + int(((i + 1) / len(self.titles)) * 70)
             self.progress_changed.emit(progress)
