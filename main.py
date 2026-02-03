@@ -85,6 +85,12 @@ class LibraryManager(QMainWindow):
     def start_search(self):
         title = self.ui.searchLineEdit.text().strip()
         token = self.get_token()
+        if token is None:
+            if self.update_tvdb_token() == False:
+                print("Failed to start search because no token")
+                return
+            token = self.get_token()
+
         
         self.ui.searchResults.clear()
         
