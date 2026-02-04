@@ -65,10 +65,10 @@ class Ui_MainWindow(object):
         self.verticalLayout = QVBoxLayout(self.searchFrame)
         self.verticalLayout.setSpacing(3)
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.label = QLabel(self.searchFrame)
-        self.label.setObjectName(u"label")
+        self.addSeriesLabel = QLabel(self.searchFrame)
+        self.addSeriesLabel.setObjectName(u"addSeriesLabel")
 
-        self.verticalLayout.addWidget(self.label)
+        self.verticalLayout.addWidget(self.addSeriesLabel)
 
         self.startScanPushButton = QPushButton(self.searchFrame)
         self.startScanPushButton.setObjectName(u"startScanPushButton")
@@ -111,6 +111,11 @@ class Ui_MainWindow(object):
         self.searchResults.header().setProperty(u"showSortIndicator", False)
 
         self.verticalLayout.addWidget(self.searchResults)
+
+        self.addSeriesPushButton = QPushButton(self.searchFrame)
+        self.addSeriesPushButton.setObjectName(u"addSeriesPushButton")
+
+        self.verticalLayout.addWidget(self.addSeriesPushButton)
 
         self.splitter_2.addWidget(self.searchFrame)
         self.folderPreviewFrame = QFrame(self.splitter_2)
@@ -331,12 +336,13 @@ class Ui_MainWindow(object):
 #if QT_CONFIG(shortcut)
         self.actionClose.setShortcut(QCoreApplication.translate("MainWindow", u"Ctrl+W", None))
 #endif // QT_CONFIG(shortcut)
-        self.label.setText(QCoreApplication.translate("MainWindow", u"Add series", None))
+        self.addSeriesLabel.setText(QCoreApplication.translate("MainWindow", u"Add series", None))
         self.startScanPushButton.setText(QCoreApplication.translate("MainWindow", u"Scan folder", None))
         self.SearchPushButton.setText(QCoreApplication.translate("MainWindow", u"Search", None))
         ___qtreewidgetitem = self.searchResults.headerItem()
         ___qtreewidgetitem.setText(1, QCoreApplication.translate("MainWindow", u"Info", None));
         ___qtreewidgetitem.setText(0, QCoreApplication.translate("MainWindow", u"Title", None));
+        self.addSeriesPushButton.setText(QCoreApplication.translate("MainWindow", u"Add selected series", None))
         self.folderPreviewLabel.setText(QCoreApplication.translate("MainWindow", u"Folder", None))
         self.pathLine.setInputMask("")
         self.pathLine.setText("")

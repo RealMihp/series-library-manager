@@ -68,6 +68,7 @@ class LibraryManager(QMainWindow):
         self.ui.searchLineEdit.returnPressed.connect(self.start_search)
         self.ui.SearchPushButton.clicked.connect(self.start_search)
         
+        self.ui.addSeriesPushButton.clicked.connect(self.add_series)
         
         
         self.ui.searchResults.setIconSize(QSize(96, 96))
@@ -110,7 +111,76 @@ class LibraryManager(QMainWindow):
         title_item.setText(1, info)
         self.ui.searchResults.addTopLevelItem(title_item)
 
-            
+
+    
+
+
+    def add_series(self):
+        print("----------------------add_series----------------------")
+        token = self.get_token()
+        if token is None:
+            self.label_notify("Failed to get token", "error", 5000 )
+            return
+        
+        item = self.ui.searchResults.currentItem()
+        if not item:
+            return
+        
+        item_info_text = item.text(1)
+        lines = item_info_text.split("\n")
+        name = item.text(0)
+        tvdb_id = None
+        if len(lines) > 2 and "TVDB id: " in lines[2]:
+            tvdb_id = lines[2].split("TVDB id: ")[1]
+        
+        if not tvdb_id:
+            self.label_notify("Invalid TVDB ID", "error", 5000)
+            return
+
+        cache = {}
+        if os.path.exists(self.cache_path):
+            try:
+                with open(self.cache_path, "r", encoding="utf-8") as f:
+                    cache = json.load(f)
+            except:
+                pass
+
+        headers = {"Authorization": f"Bearer {token}", "Accept-Language": "eng"}
+        params = {"query": tvdb_id, "type": "series", "limit": 1}
+        try:
+            r = requests.get("https://api4.thetvdb.com/v4/search", headers=headers, params=params)
+            results = r.json()
+            if results.get("data"):
+                for result in results["data"]:
+                    name = result.get("translations", {}).get("eng", result.get("name", ""))
+                    tvdb_id = result.get("id", "").strip("series-")
+                    url = result.get("image_url")
+                    
+                    status = result.get("status", "Unknown")
+                    year = result.get("year", "N/A")
+                    cache[name] = {
+                            "tvdb_id": result.get("id", None),
+                            "last_updated": datetime.datetime.now().isoformat(),
+                            "data": result
+                        }
+                
+                with open(self.cache_path, "w", encoding="utf-8") as f:
+                    json.dump(cache, f, ensure_ascii=False, indent=4)
+                
+                self.show_titles(cache)
+                self.label_notify(f"Added: {name}", "info", 10000)
+
+            else:
+                self.label_notify("Series data not found", "error", 5000)
+
+        except Exception as e:
+            print(f"Request error: {e}")
+            self.label_notify("Network error", "error", 5000)
+        
+
+
+
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
 
