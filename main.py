@@ -28,7 +28,7 @@ class LibraryManager(QMainWindow):
         os.makedirs("data", exist_ok=True)
         self.api_key_path = os.path.join("data","api_key.txt")
         self.token_path = os.path.join("data","token.txt")
-        self.cache_path = os.path.join("data", "dbcache.json")
+        self.db_path = os.path.join("data", "db.json")
         self.posters_path = os.path.join("assets","posters")
         os.makedirs(self.posters_path, exist_ok=True)
 
@@ -77,9 +77,9 @@ class LibraryManager(QMainWindow):
 
         self.check_api_key()
         try:
-            with open(self.cache_path, "r", encoding="utf-8") as f:
-                cache = json.load(f)
-            self.show_titles(cache)
+            with open(self.db_path, "r", encoding="utf-8") as f:
+                db = json.load(f)
+            self.show_titles(db)
         except Exception as e:
             print(f"Failed to load cache on startup: {e}")
             self.label_notify("Failed to load added series", "error", 5000)
@@ -226,14 +226,24 @@ class LibraryManager(QMainWindow):
         self.cache_thread.finished.connect(self.on_cache_finished)
         self.cache_thread.start()
 
-    def on_cache_finished(self, cache):
+    def on_cache_finished(self, id_list: list):
         print("Caching and searching finished")
-        with open(self.cache_path, "w", encoding="utf-8") as f:
-            json.dump(cache, f, ensure_ascii=False, indent=4)
-        print("Cache saved to file")
-        self.ui.scanProgressBar.setValue(90)
-        self.show_titles(cache)
+        token = self.get_token()
+        self.full_db_thread = FullCacheWorker(id_list, token, self)
+        self.full_db_thread.result_ready.connect(self.save_full_db)
+        self.full_db_thread.result_ready.connect(self.show_titles)
+        self.full_db_thread.start()
+        
         self.ui.scanProgressBar.setValue(100)
+
+
+    def save_full_db(self, db):
+        try:
+            with open("data/db.json", "w", encoding="utf-8") as f:
+                    json.dump(db, f, ensure_ascii=False, indent=4)
+            print("Full DB saved")
+        except Exception:
+            print("Failed to save full DB")
 
 
     def scan_library(self) -> list | None:
@@ -349,57 +359,64 @@ class LibraryManager(QMainWindow):
             
 
     # Visual
-    def show_titles(self, cache: dict):
+    def show_titles(self, db: dict):
         print("----------------------show_titles----------------------")
         self.ui.treeWidget.setColumnCount(2)
         self.ui.treeWidget.setHeaderLabels(["Title", "Info"])
         self.ui.treeWidget.setIconSize(QSize(96, 96))
         self.ui.treeWidget.setWordWrap(True)
+        
+        shown_titles = set()    
+        lang = "eng"
+        for i, title in enumerate(db.values()):
+            title_id = title.get("id")
+            if title_id in shown_titles:
+                continue
+            name = None
 
-        shown_titles = set()
-        for i in range(self.ui.treeWidget.topLevelItemCount()):
-            item = self.ui.treeWidget.topLevelItem(i)
-            shown_titles.add(item.text(0))
+            langs = title.get("nameTranslations") or []
 
-        for i, title in enumerate(cache):
-            tvdb_id = cache[title]["tvdb_id"]
+            if lang in langs:
+                translations = title.get("translations")
+                if translations:
+                    nameTranslations = translations.get("nameTranslations")
+                    if nameTranslations:
+                        for translation in nameTranslations:
+                            if translation.get("language") == lang:
+                                name = translation.get("name")
+                                break
+            if not name:
+                name = title.get("name", "Unknown")
+
+            item = QTreeWidgetItem([name])
+
+            url = title.get("image")
+            pixmap = self.load_poster(url, title_id)
             
-            if tvdb_id is not None:
-                tvdb_id = cache[title]["tvdb_id"].strip("series-")
-                title_name = cache[title]["data"]["translations"]["eng"]
-                if title_name in shown_titles:
-                    continue
+            if pixmap:
+                item.setIcon(0, QIcon(pixmap))
+            else:
+                item.setIcon(0, self.create_placeholder_icon())
 
+            status = title.get("status") or {}
+            status_name = status.get("name", "N/A")
             
-            if tvdb_id is not None:
-                title_item = QTreeWidgetItem([title_name])
-                
+            year = title.get("year", "N/A")
 
-                url = cache[title]["data"]["image_url"]
-                pixmap = self.load_poster(url,tvdb_id)
-                
-                if pixmap:
-                    title_item.setIcon(0, QIcon(pixmap))
-                else:
-                    title_item.setIcon(0, self.create_placeholder_icon())
+            info_text = f"{year}\n{status_name}\nTVDB id: {title_id}"
 
-                status = cache[title]["data"]["status"]
-                year = cache[title]["data"]["year"]
+            item.setText(1, info_text)
+            self.ui.treeWidget.addTopLevelItem(item)
 
-                info_text = f"{year}\n{status}\nTVDB id: {tvdb_id}"
-
-                title_item.setText(1, info_text)
-                self.ui.treeWidget.addTopLevelItem(title_item)
-
-                progress = 90 + int(((i + 1) / len(cache)) * 10)
-                self.ui.scanProgressBar.setValue(progress)
-                count = self.ui.treeWidget.topLevelItemCount()
-                self.ui.addedSeriesLabel.setText(f"Added series ({count})")
-
-                QApplication.processEvents()
+            progress = 90 + int(((i + 1) / len(db)) * 10)
+            self.ui.scanProgressBar.setValue(progress)
+            count = self.ui.treeWidget.topLevelItemCount()
+            self.ui.addedSeriesLabel.setText(f"Added series ({count})")
+            shown_titles.add(title_id)
+            QApplication.processEvents()
                     
 
-    def load_poster(self, link: str, tvdb_id: str) -> QPixmap | None:
+    def load_poster(self, link: str, tvdb_id: int | str) -> QPixmap | None:
         print("----------------------load_poster----------------------")
         file_path = os.path.join(self.posters_path, f"{tvdb_id}.jpg")
 
@@ -700,6 +717,7 @@ class PreferencesWindow(QDialog):
         self.api_key_path = os.path.join("data","api_key.txt")
         self.token_path = os.path.join("data","token.txt")
         self.cache_path = os.path.join("data", "dbcache.json")
+        self.db_path = os.path.join("data", "db.json")
         self.posters_path = os.path.join("assets","posters")
         self.check_api_key()
 
@@ -722,6 +740,7 @@ class APIKeyWindow(QDialog):
         self.api_key_path = os.path.join("data","api_key.txt")
         self.token_path = os.path.join("data","token.txt")
         self.cache_path = os.path.join("data", "dbcache.json")
+        self.db_path = os.path.join("data", "db.json")
         self.posters_path = os.path.join("assets","posters")
         self.ui.buttonBox.clicked.connect(self.save_and_close)
 
@@ -780,6 +799,7 @@ class ScanCacheWorker(QThread):
         self.token = token
         self.parent_class = parent_class
         self.cache_path = os.path.join("data", "dbcache.json")
+        self.db_path = os.path.join("data", "db.json")
         
 
     def run(self):
@@ -787,7 +807,7 @@ class ScanCacheWorker(QThread):
         path = self.cache_path
         
     
-        cache = {}
+        cache = set()
         if os.path.exists(path) and os.path.getsize(path) > 0:
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -829,17 +849,8 @@ class ScanCacheWorker(QThread):
                             best_match = results["data"][0]
 
                     if best_match:
-                        cache[title] = {
-                            "tvdb_id": best_match["id"],
-                            "last_updated": datetime.datetime.now().isoformat(),
-                            "data": best_match
-                        }
-                    else:
-                        cache[title] = {
-                            "tvdb_id": None,
-                            "last_updated": datetime.datetime.now().isoformat(),
-                            "data": None
-                        }
+                        cache.add(best_match["id"])
+                    
 
                 except Exception as e:
                     print(f"Request error for {title}: {e}")
@@ -850,10 +861,10 @@ class ScanCacheWorker(QThread):
             QApplication.processEvents()
             
             time.sleep(0.2) 
-        self.finished.emit(cache)
+        self.finished.emit(list(cache))
 
 class FullCacheWorker(QThread):
-    result_ready = Signal(str, str, object) 
+    result_ready = Signal(dict) 
 
     def __init__(self, id_list: list, token: str, parent_class):
         super().__init__()
@@ -901,12 +912,9 @@ class FullCacheWorker(QThread):
 
             except Exception as e:
                 print(f"Error: {e}")
-        try:
-            with open("data/db.json", "w", encoding="utf-8") as f:
-                    json.dump(db, f, ensure_ascii=False, indent=4)
-            print("Full DB saved")
-        except Exception:
-            print("Failed to save full DB")
+            time.sleep(0.2) 
+        self.result_ready.emit(db)
+        self.finished.emit()
 
 
 if __name__ == "__main__":
