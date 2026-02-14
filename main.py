@@ -201,7 +201,7 @@ class LibraryManager(QMainWindow):
             print(f"Failed to extract token from file: {e}")
         
         if token is None:
-            token = self.update_tvdb_token(key)
+            token = self.update_tvdb_token()
             if token is None:
                 print("Failed to get token")
                 self.show_messagebox("critical", "Failed to get token.\nCheck your API key or internet connection", "Error")
@@ -229,6 +229,7 @@ class LibraryManager(QMainWindow):
     def on_cache_finished(self, id_list: list):
         print("Caching and searching finished")
         token = self.get_token()
+        print(id_list)
         self.full_db_thread = FullCacheWorker(id_list, token, self)
         self.full_db_thread.result_ready.connect(self.save_full_db)
         self.full_db_thread.result_ready.connect(self.show_titles)
@@ -366,7 +367,11 @@ class LibraryManager(QMainWindow):
         self.ui.treeWidget.setIconSize(QSize(96, 96))
         self.ui.treeWidget.setWordWrap(True)
         
-        shown_titles = set()    
+        shown_titles = set()
+        for i in range(self.ui.treeWidget.topLevelItemCount()):
+            item = self.ui.treeWidget.topLevelItem(i)
+            shown_titles.add(int(str(item.text(1).split("\n")[2]).replace("TVDB id: ", "")))
+
         lang = "eng"
         for i, title in enumerate(db.values()):
             title_id = title.get("id")
@@ -792,7 +797,7 @@ class SearchWorker(QThread):
 
 class ScanCacheWorker(QThread):
     progress_changed = Signal(int)
-    finished = Signal(dict)
+    finished = Signal(list)
     def __init__(self, titles, token, parent_class):
         super().__init__()
         self.titles = titles
@@ -806,8 +811,8 @@ class ScanCacheWorker(QThread):
         print("----------------------ScanCacheWorker----------------------")
         path = self.cache_path
         
-    
-        cache = set()
+        cache = {}
+        id_list = set()
         if os.path.exists(path) and os.path.getsize(path) > 0:
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -819,8 +824,14 @@ class ScanCacheWorker(QThread):
         FAKE_WORDS = {"abridged", "parody", "fan", "dub", "re-cut", "fandub"}
 
         for i, title in enumerate(self.titles):
+            if title not in cache:
+                cache[title] = {}
+            tvdb_id = None
             if title in cache and cache[title].get("tvdb_id"):
                 print(f"From cache: {title}")
+                id_list.add(cache[title].get("tvdb_id"))
+            elif title in cache and not cache[title].get("tvdb_id"):
+                print(f"Skip: {title}")
             else:
                 print(f"Searching in TVDB: {title}")
                 params = {
@@ -849,19 +860,28 @@ class ScanCacheWorker(QThread):
                             best_match = results["data"][0]
 
                     if best_match:
-                        cache.add(best_match["id"])
-                    
+                        tvdb_id = int(str(best_match["id"].split("series-")[-1]).strip())
+                        id_list.add(tvdb_id)
+
+                    cache[title]["tvdb_id"] = tvdb_id or None
+                    time.sleep(0.2) 
 
                 except Exception as e:
                     print(f"Request error for {title}: {e}")
-                    self.label_notify("Request error", "error", 1000)
+                    self.parent_class.label_notify("Request error", "error", 1000)
 
             progress = 20 + int(((i + 1) / len(self.titles)) * 70)
             self.progress_changed.emit(progress)
             QApplication.processEvents()
             
-            time.sleep(0.2) 
-        self.finished.emit(list(cache))
+            
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(cache, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Failed to save cache: {e}")
+        self.finished.emit(list(id_list))
 
 class FullCacheWorker(QThread):
     result_ready = Signal(dict) 
@@ -871,6 +891,7 @@ class FullCacheWorker(QThread):
         self.id_list = id_list
         self.token = token
         self.parent_class = parent_class
+        self.db_path = os.path.join("data", "db.json")
 
     def run(self):
         print("----------------------FullCacheWorker----------------------")
@@ -878,8 +899,28 @@ class FullCacheWorker(QThread):
         params = {"meta": "translations,episodes"}
         db = {}
         lang = "eng"
+        saved_titles = set()
+        
+
+        if os.path.exists(self.db_path) and os.path.getsize(self.db_path) > 0:
+            try:
+                with open(self.db_path, "r", encoding="utf-8") as f:
+                    db = json.load(f)
+            except json.JSONDecodeError:
+                print("DB file is corrupted")
+        
+            for title in db:
+                saved_id = int(title)
+                saved_titles.add(saved_id)
+
         for tvdb_id in self.id_list:
+            if int(tvdb_id) in saved_titles:
+                print(f"{tvdb_id} is already saved")
+                continue
+
             tid = str(tvdb_id).strip()
+            print(f"Getting full data for {tid}...")
+
             try:
                 r = requests.get(f"https://api4.thetvdb.com/v4/series/{tid}/extended", headers=headers, params=params)
                 # Translated episodes data
@@ -909,9 +950,10 @@ class FullCacheWorker(QThread):
                             if img_path and not str(img_path).startswith("http"):
                                 current_ep["image"] = f'https://artworks.thetvdb.com{img_path}'
                 
-
+                print(f"Successfully got full data for {tid} - {db.get(tvdb_id).get("name")}")
             except Exception as e:
                 print(f"Error: {e}")
+            
             time.sleep(0.2) 
         self.result_ready.emit(db)
         self.finished.emit()
