@@ -207,6 +207,11 @@ class LibraryManager(QMainWindow):
                 self.show_messagebox("critical", "Failed to get token.\nCheck your API key or internet connection", "Error")
                 return
         
+        if not self.show_messagebox("question",
+                                "Please ensure that your folders or files are named after the series.\n\nThis process involves a large number of network requests and may take some time depending on your library size.\n\nDo you want to continue?",
+                                "Confirmation"):
+            return
+
         self.ui.scanProgressBar.setValue(10)
 
         titles = self.scan_library()
@@ -547,7 +552,7 @@ class LibraryManager(QMainWindow):
         elif action == action2:
             pass
         
-    def show_messagebox(self, m_type: str, text: str, title: str ="Message"):
+    def show_messagebox(self, m_type: str, text: str, title: str ="Message") -> None | bool:
         if m_type.lower() not in ("information", "warning", "critical", "question"):
             raise ValueError(f"Unknown message type: {m_type}")
         
@@ -563,7 +568,9 @@ class LibraryManager(QMainWindow):
             msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         msg.setWindowTitle(title)
         msg.setText(text)
-        msg.exec()
+        result = msg.exec()
+
+        return result in (QMessageBox.Yes, QMessageBox.Ok)
 
     def label_notify(self, text: str, m_type: str = "info", delay: int = 5000):
         color = "red" if m_type == "error" else "black"
@@ -825,13 +832,13 @@ class ScanCacheWorker(QThread):
 
         for i, title in enumerate(self.titles):
             if title not in cache:
-                cache[title] = {}
-            tvdb_id = None
-            if title in cache and cache[title].get("tvdb_id"):
-                print(f"From cache: {title}")
-                id_list.add(cache[title].get("tvdb_id"))
-            elif title in cache and not cache[title].get("tvdb_id"):
-                print(f"Skip: {title}")
+                cache[title] = {"tvdb_id": None}
+            
+            tvdb_id = cache[title].get("tvdb_id")
+            
+            if tvdb_id:
+                print(f"From cache: {title} -> {tvdb_id}")
+                id_list.add(tvdb_id)
             else:
                 print(f"Searching in TVDB: {title}")
                 params = {
@@ -843,6 +850,16 @@ class ScanCacheWorker(QThread):
                 try:
                     response = requests.get("https://api4.thetvdb.com/v4/search", headers=headers, params=params, timeout=10)
                     results = response.json()
+                    
+                    # Errors
+                    if response.status_code == 401:
+                        print("API Error: 401.\nCheck your API key")
+                        self.parent_class.show_messagebox("critical", "API Error: 401.\nCheck your API key", "Error")
+                        return
+                    elif response.status_code != 200:
+                        print(f"API Error: {response.status_code}")
+                        self.parent_class.show_messagebox("critical", f"API Error: {response.status_code}", "Error")
+                        return
                     
                     best_match = None
                     
@@ -861,7 +878,7 @@ class ScanCacheWorker(QThread):
 
                     if best_match:
                         tvdb_id = int(str(best_match["id"].split("series-")[-1]).strip())
-                        id_list.add(tvdb_id)
+                        id_list.add(str(tvdb_id))
 
                     cache[title]["tvdb_id"] = tvdb_id or None
                     time.sleep(0.2) 
@@ -909,22 +926,30 @@ class FullCacheWorker(QThread):
             except json.JSONDecodeError:
                 print("DB file is corrupted")
         
-            for title in db:
-                saved_id = int(title)
-                saved_titles.add(saved_id)
+            for title_id in db:
+                saved_titles.add(str(title_id))
 
         for tvdb_id in self.id_list:
-            if int(tvdb_id) in saved_titles:
-                print(f"{tvdb_id} is already saved")
+            tid = str(tvdb_id).strip()
+            if tid in saved_titles:
+                print(f"{tid} is already saved")
                 continue
 
-            tid = str(tvdb_id).strip()
+            
             print(f"Getting full data for {tid}...")
 
             try:
                 r = requests.get(f"https://api4.thetvdb.com/v4/series/{tid}/extended", headers=headers, params=params)
                 # Translated episodes data
                 r2 = requests.get(f"https://api4.thetvdb.com/v4/series/{tid}/episodes/official/{lang}", headers=headers)
+                
+                # Errors
+                if r.status_code == 401 or r2.status_code == 401:
+                    print("API Error: 401.\nCheck your API key")
+                    return
+                elif r.status_code != 200 or r2.status_code != 200:
+                    print(f"API Error: {r.status_code}")
+                    return
                 
                 results = r.json()
                 results2 = r2.json()
@@ -934,23 +959,23 @@ class FullCacheWorker(QThread):
                 translated_eps = translated_data.get("episodes", [])
 
                 if "data" in results and results["data"]:
-                    db[tvdb_id] = results["data"]
+                    db[tid] = results["data"]
                     
                     if "data" in results2 and "episodes" in results2["data"]:
-                        db[tvdb_id]["episodes"] = translated_eps
+                        db[tid]["episodes"] = translated_eps
 
-                        for i in range(len(db[tvdb_id]["episodes"])):
-                            if db[tvdb_id]["episodes"][i].get("name") is None:
+                        for i in range(len(db[tid]["episodes"])):
+                            if db[tid]["episodes"][i].get("name") is None:
                                 if i < len(original_eps):
-                                    db[tvdb_id]["episodes"][i] = original_eps[i]
+                                    db[tid]["episodes"][i] = original_eps[i]
                             
-                            current_ep = db[tvdb_id]["episodes"][i]
+                            current_ep = db[tid]["episodes"][i]
                             img_path = current_ep.get("image")
 
                             if img_path and not str(img_path).startswith("http"):
                                 current_ep["image"] = f'https://artworks.thetvdb.com{img_path}'
                 
-                print(f"Successfully got full data for {tid} - {db.get(tvdb_id).get("name")}")
+                print(f"Successfully got full data for {tid} - {db.get(tid).get("name")}")
             except Exception as e:
                 print(f"Error: {e}")
             
