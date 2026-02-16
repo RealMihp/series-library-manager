@@ -146,46 +146,11 @@ class LibraryManager(QMainWindow):
         if not tvdb_id:
             self.label_notify("Invalid TVDB ID", "error", 5000)
             return
+        id_list = [tvdb_id]
 
-        cache = {}
-        if os.path.exists(self.cache_path):
-            try:
-                with open(self.cache_path, "r", encoding="utf-8") as f:
-                    cache = json.load(f)
-            except:
-                pass
+        self.on_cache_finished(id_list)
 
-        headers = {"Authorization": f"Bearer {token}", "Accept-Language": "eng"}
-        params = {"query": tvdb_id, "type": "series", "limit": 1}
-        try:
-            r = requests.get("https://api4.thetvdb.com/v4/search", headers=headers, params=params)
-            results = r.json()
-            if results.get("data"):
-                for result in results["data"]:
-                    name = result.get("translations", {}).get("eng", result.get("name", ""))
-                    tvdb_id = result.get("id", "").strip("series-")
-                    url = result.get("image_url")
-                    
-                    status = result.get("status", "Unknown")
-                    year = result.get("year", "N/A")
-                    cache[name] = {
-                            "tvdb_id": result.get("id", None),
-                            "last_updated": datetime.datetime.now().isoformat(),
-                            "data": result
-                        }
-                
-                with open(self.cache_path, "w", encoding="utf-8") as f:
-                    json.dump(cache, f, ensure_ascii=False, indent=4)
-                
-                self.show_titles(cache)
-                self.label_notify(f"Added: {name}", "info", 10000)
 
-            else:
-                self.label_notify("Series data not found", "error", 5000)
-
-        except Exception as e:
-            print(f"Request error: {e}")
-            self.label_notify("Network error", "error", 5000)
 
             
     def start_scan(self):
