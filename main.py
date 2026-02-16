@@ -47,12 +47,12 @@ class LibraryManager(QMainWindow):
 
         self.ui.actionAdd_folder.triggered.connect(self.add_folder)
         self.ui.actionClose.triggered.connect(self.close_folder)
-
+        self.ui.actionScan_Folder.triggered.connect(self.start_scan)
 
         self.pref_win = PreferencesWindow()
         self.api_win = APIKeyWindow()
 
-        self.ui.startScanPushButton.pressed.connect(self.start_scan)
+        # self.ui.startScanPushButton.pressed.connect(self.start_scan)
         
         self.ui.actionPreferences.triggered.connect(self.open_preferences)
 
@@ -546,11 +546,31 @@ class LibraryManager(QMainWindow):
             item = self.ui.treeWidget.currentItem()
             if item:
                 info_text = item.text(1)
-                tvdb_id = str(str(info_text.split("\n")[2]).split("TVDB id: ")[1])
+                tvdb_id = str(str(info_text.split("\n")[2]).split("TVDB id: ")[-1]).strip()
                 url = QUrl(f"https://www.thetvdb.com/search?query={tvdb_id}")
                 QDesktopServices.openUrl(url)
         elif action == action2:
-            pass
+            item = self.ui.treeWidget.currentItem()
+            tvdb_id = str(str(item.text(1).split("\n")[2]).split("TVDB id: ")[-1]).strip()
+            index = self.ui.treeWidget.indexOfTopLevelItem(item)
+            self.ui.treeWidget.takeTopLevelItem(index)
+            try:
+                with open(self.db_path, "r", encoding="utf-8") as f:
+                    db = json.load(f)
+            except json.JSONDecodeError:
+                print("DB file is corrupted")
+
+            for title in db:
+                if title == tvdb_id:
+                    db.pop(title, None)
+                    break
+            try:
+                with open(self.db_path, "w", encoding="utf-8") as f:
+                    json.dump(db, f, ensure_ascii=False, indent=4)
+            except Exception as e:
+                print(f"Failed to save cache: {e}")
+            return
+            
         
     def show_messagebox(self, m_type: str, text: str, title: str ="Message") -> None | bool:
         if m_type.lower() not in ("information", "warning", "critical", "question"):

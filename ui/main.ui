@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1920</width>
-    <height>1080</height>
+    <width>1280</width>
+    <height>960</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -75,25 +75,6 @@
              <widget class="QLabel" name="addSeriesLabel">
               <property name="text">
                <string>Add series</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="startScanPushButton">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>0</width>
-                <height>26</height>
-               </size>
-              </property>
-              <property name="text">
-               <string>Scan folder</string>
               </property>
              </widget>
             </item>
@@ -510,7 +491,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1920</width>
+     <width>1280</width>
      <height>33</height>
     </rect>
    </property>
@@ -523,6 +504,8 @@
     </property>
     <addaction name="actionAdd_folder"/>
     <addaction name="actionClose"/>
+    <addaction name="separator"/>
+    <addaction name="actionScan_Folder"/>
    </widget>
    <widget class="QMenu" name="menuEdit">
     <property name="title">
@@ -552,6 +535,11 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+W</string>
+   </property>
+  </action>
+  <action name="actionScan_Folder">
+   <property name="text">
+    <string>Scan Folder</string>
    </property>
   </action>
  </widget>
